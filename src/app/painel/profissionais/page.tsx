@@ -27,7 +27,7 @@ import { barbearia } from "@/lib/api/barbearia";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { minutesToTime, onlyDigits, timeToMinutes, WEEKDAYS } from "@/lib/format";
 import { professionalSchema, type ProfessionalInput } from "@/schemas/forms";
-import type { Professional } from "@/types/api";
+import type { Professional, Service } from "@/types/api";
 
 export default function ProfissionaisPage() {
   const { companyId } = useAuth();
@@ -99,7 +99,7 @@ export default function ProfissionaisPage() {
                   {pro.services.map((s) => s.name).join(", ") || "Sem serviços"}
                 </p>
                 <Button variant="outline" onClick={() => setSelected(pro)}>
-                  Grade e comissão
+                  Serviços e horários
                 </Button>
               </CardContent>
             </Card>
@@ -161,6 +161,7 @@ export default function ProfissionaisPage() {
         <ProfessionalEditor
           companyId={companyId}
           professional={selected}
+          catalog={services.data ?? []}
           onClose={() => setSelected(null)}
         />
       ) : null}
@@ -171,10 +172,12 @@ export default function ProfissionaisPage() {
 function ProfessionalEditor({
   companyId,
   professional,
+  catalog,
   onClose,
 }: {
   companyId: string;
   professional: Professional;
+  catalog: Service[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -182,6 +185,9 @@ function ProfessionalEditor({
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("18:00");
   const [rate, setRate] = useState("40");
+  const [serviceIds, setServiceIds] = useState(
+    () => professional.services.map((item) => item.id),
+  );
 
   const availability = useQuery({
     queryKey: ["availability", companyId, professional.id],
@@ -222,13 +228,68 @@ function ProfessionalEditor({
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
+  const saveServices = useMutation({
+    mutationFn: () =>
+      barbearia.professionals.update(companyId, professional.id, { serviceIds }),
+    onSuccess: async () => {
+      toast.success("Serviços atualizados.");
+      await queryClient.invalidateQueries({ queryKey: ["professionals"] });
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
+
+  const serviceOptions = catalog.filter(
+    (service) => service.active || serviceIds.includes(service.id),
+  );
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90svh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{professional.name}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-6">
+          <div className="grid gap-3">
+            <p className="text-sm font-medium">Serviços que este barbeiro faz</p>
+            {serviceOptions.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Cadastre serviços da casa primeiro.
+              </p>
+            ) : (
+              <fieldset className="grid gap-2">
+                {serviceOptions.map((service) => (
+                  <label key={service.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="accent-primary size-4"
+                      checked={serviceIds.includes(service.id)}
+                      onChange={() =>
+                        setServiceIds((current) =>
+                          current.includes(service.id)
+                            ? current.filter((id) => id !== service.id)
+                            : [...current, service.id],
+                        )
+                      }
+                    />
+                    <span>
+                      {service.name}
+                      {!service.active ? (
+                        <span className="text-muted-foreground"> (inativo)</span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            <Button
+              size="sm"
+              onClick={() => saveServices.mutate()}
+              disabled={saveServices.isPending}
+            >
+              {saveServices.isPending ? "Salvando…" : "Salvar serviços"}
+            </Button>
+          </div>
+
           <div className="grid gap-3">
             <p className="text-sm font-medium">Grade semanal</p>
             <div className="grid grid-cols-3 gap-2">
